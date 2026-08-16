@@ -1,0 +1,128 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// One row per Discord server the bot is in / has configured.
+model Guild {
+  id              String   @id // Discord guild snowflake
+  name            String
+  iconHash        String?
+  ownerId         String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  securityConfig  SecurityConfig?
+  automodConfig   AutomodConfig?
+  auditLogs       AuditLog[]
+  punishments     Punishment[]
+  automodRules    AutomodRule[]
+}
+
+model SecurityConfig {
+  guildId               String  @id
+  guild                 Guild   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  antiNukeEnabled        Boolean @default(true)
+  antiRaidEnabled         Boolean @default(true)
+  antiMassBanEnabled       Boolean @default(true)
+  antiMassKickEnabled      Boolean @default(true)
+  antiChannelDeleteEnabled Boolean @default(true)
+  antiChannelCreateEnabled Boolean @default(false)
+  antiRoleDeleteEnabled    Boolean @default(true)
+  antiRoleCreateEnabled    Boolean @default(false)
+  antiPermissionAbuseEnabled Boolean @default(true)
+  antiWebhookAbuseEnabled  Boolean @default(true)
+  antiBotAbuseEnabled      Boolean @default(true)
+  joinProtectionEnabled    Boolean @default(true)
+  minAccountAgeMinutes     Int     @default(0) // 0 = disabled
+  lockdownActive           Boolean @default(false)
+
+  // thresholds: "N actions within M seconds triggers a response"
+  massActionThreshold      Int     @default(5)
+  massActionWindowSeconds  Int     @default(10)
+  raidJoinThreshold         Int     @default(10)
+  raidJoinWindowSeconds     Int     @default(30)
+
+  punishmentAction         String  @default("QUARANTINE") // QUARANTINE | KICK | BAN | STRIP_ROLES
+  updatedAt                DateTime @updatedAt
+}
+
+model AutomodConfig {
+  guildId                String  @id
+  guild                  Guild   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  spamDetectionEnabled     Boolean @default(true)
+  floodDetectionEnabled    Boolean @default(true)
+  mentionSpamEnabled       Boolean @default(true)
+  mentionSpamLimit         Int     @default(5)
+  linkFilterEnabled        Boolean @default(false)
+  inviteFilterEnabled      Boolean @default(true)
+  wordFilterEnabled        Boolean @default(false)
+  capsFilterEnabled        Boolean @default(false)
+  capsPercentThreshold     Int     @default(70)
+  emojiSpamEnabled         Boolean @default(true)
+  emojiSpamLimit           Int     @default(10)
+  duplicateMessageEnabled  Boolean @default(true)
+
+  updatedAt                DateTime @updatedAt
+}
+
+model AutomodRule {
+  id          String   @id @default(cuid())
+  guildId     String
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  type        String   // WORD_FILTER | LINK_WHITELIST | etc.
+  pattern     String
+  action      String   // DELETE | WARN | TIMEOUT | KICK | BAN
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+// Every meaningful thing that happens: moderation actions, config changes,
+// security detections, logins — the single source of truth for the
+// "searchable and filterable audit logs" requirement.
+model AuditLog {
+  id          String   @id @default(cuid())
+  guildId     String
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  category    String   // MODERATION | SECURITY | AUTOMOD | CONFIG | AUTH | BOT
+  action      String   // e.g. "ban", "lockdown_enable", "login"
+  actorId     String?  // Discord user id of who did it (null = bot/system)
+  actorType   String   // USER | BOT | SYSTEM
+  targetId    String?  // Discord user/channel/role id affected, if any
+  reason      String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([guildId, createdAt])
+  @@index([guildId, category])
+}
+
+model Punishment {
+  id          String   @id @default(cuid())
+  guildId     String
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  userId      String
+  type        String   // BAN | KICK | TIMEOUT | WARN | SOFTBAN
+  reason      String?
+  issuedBy    String   // Discord user id (moderator) or "SYSTEM"
+  expiresAt   DateTime?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([guildId, userId])
+}
+
+// Backend-issued session, tied to a Discord OAuth2 identity.
+model Session {
+  id           String   @id @default(cuid())
+  userId       String   // Discord user id
+  refreshToken String   @unique
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+}

@@ -1,2 +1,0 @@
-# aegis-backend
-aegis-backend
